@@ -1,6 +1,8 @@
+
 import numpy as np
 import torch 
 import torch.nn as nn
+import torch.nn.functional as F
 
 import pandas as pd
 
@@ -10,6 +12,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+from torch.utils.data import Dataset , DataLoader,TensorDataset
+from sklearn.model_selection import train_test_split # Split the dataset (train, validation, test)
+
 
 
 dataframe = pd.read_csv('winequalityN.csv')
@@ -61,6 +68,74 @@ def CleaningNullAndReset(df_in):
     df_in = df_in.reset_index(drop=True) # reseting rows of dataframe.
     return df_in
 
+def SwitchColumnsFirToFin(df_in):
+    ### Have to replace white and red string values to (0,1)
+    df_in.type = df_in.type.map({'white':0 , 'red':1})
+
+
+    list_of_titles = df_in.columns.values.tolist()
+
+    ### Quick way to switch strings in list
+    list_of_titles[0], list_of_titles[-1] = list_of_titles[-1], list_of_titles[0]
+
+
+    df_in = df_in.reindex(columns = list_of_titles)
+    return df_in 
+
+
+
+def FunctionZscore(data_in):
+
+    ss = StandardScaler()
+    scaled = ss.fit_transform(data_in)
+
+    res = pd.DataFrame(scaled , columns = data_in.columns)
+    return res
+
+
+
+def SeparatingDataFromLabels(df_in):
+    labels = df_in["type"]
+    df_in.drop(['type'],axis = 1,inplace = True)
+    data = df_in.copy()
+    return data,labels
+
+
+def TrainTest(X_in,y_in):
+
+
+    ### Converting dataframe to tensor 
+    X_in = torch.tensor(X_in.values , dtype = torch.float32)
+    y_in = torch.tensor(y_in.values , dtype = torch.float32)
+
+    # First attempt without shuffling the data
+    X_train , X_test , y_train , y_test = train_test_split(X_in,y_in,test_size = 0.2 ,shuffle = False) 
+
+    return X_train,X_test , y_train , y_test 
+
+
+class NeuralNet(nn.Module):
+    def __init__(self,columns):
+        super().__init__()
+
+        ### Inpute layer
+        self.input = nn.Linear(columns,15)
+
+        ### hidden layers
+        self.fc1 = nn.Linear(15,15)
+        self.fc2 = nn.Linear(15,15)
+
+        ### output layer
+        self.output = nn.Linear(15,1)
+
+    def forward(self,x):
+        x = F.relu(self.input(x))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        return self.output(x)
+
+
+
 
 
 #red,white = SeparatingByType(df)
@@ -72,23 +147,50 @@ def CleaningNullAndReset(df_in):
 
 df = CleaningNullAndReset(df)
 
+df = SwitchColumnsFirToFin(df)
 
-### Have to replace white and red string values to (0,1)
-df.type = df.type.map({'white':0 , 'red':1})
-
-column_names = ['type','quality']
-
-list_of_titles = df.columns.values.tolist()
-print(list_of_titles)
-
+### To keep df dataframe untouchable
+dfToSplit = df.copy()
 
 print(df)
+dfToSplit = FunctionZscore(dfToSplit)
+print(dfToSplit)
+
+
+# Here, we get type column as labels separate than rest dataframe . 
+# Rest dataframe saved in data
+data , labels = SeparatingDataFromLabels(dfToSplit)
 
 
 
+X_train,X_test , y_train , y_test = TrainTest(data,labels)
 
 
 
+rows , columns = X_train.shape
+print(rows,columns)
+
+# start with a fresh network
+net = NeuralNet(columns)
+optimizer = torch.optim.Adam(net.parameters(),lr=.0001)
+lossfun = nn.BCEWithLogitsLoss() # try with different loss function
+
+
+numEpochs = 100
+
+for epochi in range(numEpochs):
+
+
+    y_pred = net(X_train)
+    y_train = y_train.reshape(-1,1)  
+    loss_train = lossfun(y_pred,y_train)
+
+
+    optimizer.zero_grad()
+    loss_train.backward()
+    optimizer.step()
+
+print("OKEY")
 
 
 
